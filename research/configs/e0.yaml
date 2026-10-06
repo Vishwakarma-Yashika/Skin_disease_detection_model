@@ -1,0 +1,117 @@
+# =============================================================================
+# Experiment E0 -- fixed EfficientNet-B0 + ResNet-34 fusion baseline (HAM10000)
+#
+# FROZEN. Every value below is declared before training and is NOT tuned on the
+# test set. The SHA-256 of this file's parsed content (config_hash) is stored in
+# every checkpoint and run directory; evaluation refuses runs whose config_hash
+# differs from this file. Changing anything here defines a different experiment.
+#
+# Machine-specific settings (dataset location, device, DataLoader workers) are
+# deliberately NOT in this file -- they are passed on the command line / env and
+# recorded in each run's run_metadata.json instead.
+# =============================================================================
+
+experiment:
+  name: E0
+  description: >-
+    Fresh, fully documented baseline of the unchanged EfficientNet-B0 + ResNet-34
+    concat-fusion classifier on a lesion-level HAM10000 split. No uncertainty,
+    calibration, conformal, OOD, ensembling or accuracy optimisation.
+  output_dir: research/outputs/E0
+  seeds: [42, 123, 2024, 3407, 5001]
+
+data:
+  # Paths are relative to the dataset root given via --data-root or HAM10000_ROOT.
+  metadata_file: HAM10000_metadata.csv
+  image_dirs: [HAM10000_images_part_1, HAM10000_images_part_2]
+  image_extension: .jpg
+  # Class order == index order of the logits. Alphabetical, identical to the
+  # historical checkpoint's `diagnosis_classes`.
+  classes: [akiec, bcc, bkl, df, mel, nv, vasc]
+
+split:
+  file: research/splits/ham10000_lesion_split.csv
+  # SHA-256 of the split CSV. Training/evaluation fail if the file changes.
+  sha256: bda53d198ff403653548b8f072116e78350067417ddf41ec3e342f034bf464d7
+  # Unit of splitting = unique lesion_id (each lesion has exactly one dx), stratified
+  # by dx at lesion level with two sklearn train_test_split calls:
+  #   lesions -> train (70%) | holdout (30%);  holdout -> val (50%) | test (50%).
+  # Every image follows its lesion, so no lesion can cross splits.
+  method: lesion_stratified_two_stage
+  group_column: lesion_id
+  stratify_column: dx
+  train_fraction: 0.70
+  val_fraction: 0.15
+  test_fraction: 0.15
+  random_state: 42
+
+model:
+  architecture: efficientnet_b0+resnet34_concat_fusion
+  efficientnet_feature_dim: 1280
+  resnet_feature_dim: 512
+  fusion_dim: 512                  # Linear(1792,512) -> BN1d -> ReLU -> Dropout
+  dropout: 0.3                     # fixed by backend/app/model.py; verified at build
+  num_classes: 7
+  pretrained_weights:              # torchvision ImageNet weights (fixed by backend)
+    efficientnet_b0: IMAGENET1K_V1
+    resnet34: IMAGENET1K_V1
+  # torchvision efficientnet_b0 default; active in train mode only. Recorded, not tuned.
+  efficientnet_stochastic_depth_prob: 0.2
+
+preprocessing:
+  # Plain resize (aspect ratio NOT preserved) + ImageNet normalisation.
+  # Identical to backend/app/model.py `inference_transform` (verified at runtime).
+  resize: [224, 224]
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+
+augmentation:
+  # Applied to TRAIN only, after resize. Validation/test use no augmentation.
+  train:
+    horizontal_flip_p: 0.5
+    vertical_flip_p: 0.5
+
+training:
+  epochs: 30                       # fixed budget, no early stopping
+  batch_size: 32
+  drop_last: true                  # avoids a size-1 final batch in BatchNorm1d
+  loss: cross_entropy
+  label_smoothing: 0.0
+  class_weights: null              # plain CE, no reweighting/resampling
+  sampler: uniform_shuffle
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    weight_decay: 1.0e-4           # applied to all parameters
+    betas: [0.9, 0.999]
+  scheduler:
+    name: cosine                   # CosineAnnealingLR, stepped once per epoch
+    t_max_epochs: 30
+    eta_min: 1.0e-6
+  amp: false
+  deterministic: true
+
+checkpoint:
+  # Predeclared selection rule. Test data are never loaded during training.
+  selection_metric: val_nll        # mean validation cross-entropy (proper scoring rule)
+  mode: min
+  tie_break: earliest_epoch
+
+evaluation:
+  ece_bins: 15
+  ece_binning: equal_width
+  selective_coverages: [1.0, 0.9, 0.8, 0.7, 0.6, 0.5]
+  # Declared project mapping = `category` in backend/app/class_info.py (verified at runtime).
+  malignant_classes: [akiec, bcc, mel]
+  benign_classes: [bkl, df, nv, vasc]
+  binary_decision_rule: argmax_class_in_malignant_set
+  binary_score: sum_of_malignant_class_probabilities
+  melanoma_operating_point:
+    target_specificity: 0.90       # mel vs rest, score = p(mel)
+    threshold_source: val          # threshold chosen on validation, applied to test
+    min_test_positive_lesions: 30  # below this the estimate is reported as insufficient
+  bootstrap:
+    n_resamples: 2000
+    unit: lesion_id                # cluster bootstrap: images of a lesion are not independent
+    confidence_level: 0.95
+    seed: 0

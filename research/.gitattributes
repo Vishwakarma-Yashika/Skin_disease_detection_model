@@ -1,0 +1,3 @@
+# The split CSV is pinned by SHA-256 in configs/e0.yaml: keep its bytes exact
+# (no CRLF conversion on checkout).
+splits/*.csv -text

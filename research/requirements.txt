@@ -1,0 +1,6 @@
+# Research-only dependencies, on top of backend/requirements.txt
+# (torch 2.4.1, torchvision 0.19.1, Pillow, numpy are taken from there).
+pandas==2.3.3
+scikit-learn==1.7.2
+PyYAML==6.0.3
+matplotlib==3.10.8

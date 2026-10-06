@@ -1,0 +1,118 @@
+{
+  "total_images": 10015,
+  "total_lesions": 7470,
+  "splits": {
+    "train": {
+      "n_images": 6981,
+      "n_lesions": 5229,
+      "fraction_of_images": 0.6970544183724413,
+      "fraction_of_lesions": 0.7,
+      "class_image_counts": {
+        "akiec": 222,
+        "bcc": 361,
+        "bkl": 772,
+        "df": 71,
+        "mel": 773,
+        "nv": 4683,
+        "vasc": 99
+      },
+      "class_image_fractions": {
+        "akiec": 0.03180060163300387,
+        "bcc": 0.05171178914195674,
+        "bkl": 0.11058587594900444,
+        "df": 0.010170462684429164,
+        "mel": 0.11072912190230626,
+        "nv": 0.6708207993124194,
+        "vasc": 0.014181349376880103
+      },
+      "class_lesion_counts": {
+        "akiec": 159,
+        "bcc": 229,
+        "bkl": 509,
+        "df": 51,
+        "mel": 430,
+        "nv": 3782,
+        "vasc": 69
+      }
+    },
+    "val": {
+      "n_images": 1532,
+      "n_lesions": 1120,
+      "fraction_of_images": 0.1529705441837244,
+      "fraction_of_lesions": 0.1499330655957162,
+      "class_image_counts": {
+        "akiec": 53,
+        "bcc": 82,
+        "bkl": 160,
+        "df": 24,
+        "mel": 173,
+        "nv": 1018,
+        "vasc": 22
+      },
+      "class_image_fractions": {
+        "akiec": 0.034595300261096605,
+        "bcc": 0.05352480417754569,
+        "bkl": 0.10443864229765012,
+        "df": 0.015665796344647518,
+        "mel": 0.1129242819843342,
+        "nv": 0.664490861618799,
+        "vasc": 0.014360313315926894
+      },
+      "class_lesion_counts": {
+        "akiec": 34,
+        "bcc": 49,
+        "bkl": 109,
+        "df": 11,
+        "mel": 92,
+        "nv": 810,
+        "vasc": 15
+      }
+    },
+    "test": {
+      "n_images": 1502,
+      "n_lesions": 1121,
+      "fraction_of_images": 0.14997503744383425,
+      "fraction_of_lesions": 0.1500669344042838,
+      "class_image_counts": {
+        "akiec": 52,
+        "bcc": 71,
+        "bkl": 167,
+        "df": 20,
+        "mel": 167,
+        "nv": 1004,
+        "vasc": 21
+      },
+      "class_image_fractions": {
+        "akiec": 0.03462050599201065,
+        "bcc": 0.04727030625832224,
+        "bkl": 0.11118508655126498,
+        "df": 0.013315579227696404,
+        "mel": 0.11118508655126498,
+        "nv": 0.6684420772303595,
+        "vasc": 0.013981358189081226
+      },
+      "class_lesion_counts": {
+        "akiec": 35,
+        "bcc": 49,
+        "bkl": 109,
+        "df": 11,
+        "mel": 92,
+        "nv": 811,
+        "vasc": 14
+      }
+    }
+  },
+  "split_file": "D:\\skin-disease-app (1)\\skin-disease-app\\research\\splits\\ham10000_lesion_split.csv",
+  "sha256": "bda53d198ff403653548b8f072116e78350067417ddf41ec3e342f034bf464d7",
+  "split_config": {
+    "file": "research/splits/ham10000_lesion_split.csv",
+    "sha256": "__FILL_AFTER_SPLIT_GENERATION__",
+    "method": "lesion_stratified_two_stage",
+    "group_column": "lesion_id",
+    "stratify_column": "dx",
+    "train_fraction": 0.7,
+    "val_fraction": 0.15,
+    "test_fraction": 0.15,
+    "random_state": 42
+  }
+}
