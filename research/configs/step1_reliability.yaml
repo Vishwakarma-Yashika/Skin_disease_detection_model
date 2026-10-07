@@ -1,0 +1,44 @@
+# =============================================================================
+# STEP 1 -- Baseline reliability evaluation of the EXISTING (historical) checkpoint.
+#
+# Evaluation only: no retraining, no calibration, no temperature scaling, no MC
+# dropout, no ensembles, no OOD detection, no conformal prediction, no TTA.
+# Every threshold below is declared in advance; none is tuned on the evaluation data.
+# =============================================================================
+
+experiment:
+  name: STEP1_BASELINE_RELIABILITY
+  output_dir: research/outputs/reliability_step1
+
+model:
+  # null -> backend/app/config.py MODEL_PATH (backend/models/best_fusion_model.pt,
+  # or the MODEL_PATH env var). Overridable with --checkpoint.
+  checkpoint: null
+  # Must equal the checkpoint's `diagnosis_classes` exactly (asserted, never reordered).
+  expected_class_order: [akiec, bcc, bkl, df, mel, nv, vasc]
+
+inference:
+  # Preprocessing = backend/app/model.py `inference_transform`, imported, not redefined:
+  # PIL RGB conversion -> Resize((224,224)) -> ToTensor -> Normalize(ImageNet mean/std).
+  batch_size: 32
+  # The batched path is checked against the backend's exact single-image path on
+  # this many images; max |logit difference| must stay below the tolerance.
+  backend_parity_images: 16
+  backend_parity_tolerance: 1.0e-4
+
+analysis:
+  high_confidence_thresholds: [0.90, 0.95, 0.99]
+  # Confidence-bin table + reliability diagram: [0.0,0.1), ..., [0.8,0.9), [0.9,1.0].
+  confidence_bins: 10
+  # ECE/MCE/classwise ECE: same convention as E0 (research/evaluation/calibration_metrics.py):
+  # 15 equal-width bins (i/15, (i+1)/15], first bin also contains 0.
+  ece_bins: 15
+  selective_coverages: [1.0, 0.9, 0.8, 0.7, 0.6, 0.5]
+  # Project-level mapping = `category` in backend/app/class_info.py (asserted equal).
+  malignant_classes: [akiec, bcc, mel]
+  benign_classes: [bkl, df, nv, vasc]
+  bootstrap:
+    n_resamples: 2000
+    unit: lesion_id
+    confidence_level: 0.95
+    seed: 0

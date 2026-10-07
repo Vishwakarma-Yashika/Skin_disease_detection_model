@@ -157,3 +157,27 @@ unless you decide to.
 - GPU runs use deterministic settings with `warn_only=True`, so a few CUDA kernels can still be nondeterministic.
   Results are reproducible up to that, and exactly reproducible only on identical hardware and software.
 - `run_metadata.json` records `git_dirty`. Commit `research/` before the real runs so each run maps to a commit.
+
+## STEP 1 — Baseline reliability of the existing checkpoint (evaluation only)
+
+Evaluates the historical `backend/models/best_fusion_model.pt` without retraining or
+calibrating it: raw logits, classification, calibration *measurements*, confidence /
+entropy / top-2-margin analysis, high-confidence errors, MSP risk–coverage, and
+malignant-vs-benign. Config: `configs/step1_reliability.yaml`. Code:
+`evaluation/step1_reliability.py`, `reliability_analysis.py`, `reliability_figures.py`.
+
+```bash
+# Existing checkpoint on the E0 split -- labelled cross-protocol (see below)
+python -m research.evaluation.step1_reliability --e0-split test --data-root <HAM10000 root>
+# Existing checkpoint on an explicit manifest: image_id, lesion_id, label, image_path
+python -m research.evaluation.step1_reliability --manifest evaluation_manifest.csv
+```
+
+Outputs go to `outputs/reliability_step1/` (git-ignored): `metadata/`, `predictions/`
+(raw logits `.npz` + CSV), `metrics/`, `figures/` (PNG + PDF), `reports/step1_report.md`.
+
+The historical model's training/validation split cannot be reconstructed, and its
+checkpoint arithmetic suggests it used all of HAM10000. Results on any HAM10000 subset,
+including the E0 split, are therefore a cross-protocol evaluation on largely
+seen images, not a held-out test of that model. Use `--manifest` with images that
+model cannot have seen (e.g. the ISIC 2018 Task 3 test set) for a genuinely held-out evaluation.

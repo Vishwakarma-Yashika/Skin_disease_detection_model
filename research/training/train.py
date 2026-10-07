@@ -18,6 +18,7 @@ import os
 import shutil
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -45,6 +46,8 @@ def parse_args(argv=None):
     p.add_argument("--device", default="auto", help="auto | cpu | cuda | cuda:N")
     p.add_argument("--num-workers", type=int, default=4)
     p.add_argument("--overwrite", action="store_true", help="allow writing into an existing run directory")
+    p.add_argument("--output-dir", default=None,
+                   help="override experiment.output_dir (runtime setting; recorded, not part of the config hash)")
     p.add_argument("--smoke-batches", type=int, default=None,
                    help="PIPELINE TEST ONLY: 1 epoch, N batches per loop, written to outputs/smoke/. Not an E0 result.")
     return p.parse_args(argv)
@@ -133,7 +136,7 @@ def main(argv=None):
     t = cfg["training"]
     epochs = 1 if smoke else t["epochs"]
 
-    base_dir = repo_path(cfg["experiment"]["output_dir"])
+    base_dir = repo_path(args.output_dir or cfg["experiment"]["output_dir"])
     run_dir = (base_dir.parent / "smoke" if smoke else base_dir) / f"seed_{seed}"
     if (run_dir / "best.pt").exists() and not args.overwrite:
         raise SystemExit(f"{run_dir} already contains a trained run. Pass --overwrite to replace it.")
@@ -177,7 +180,7 @@ def main(argv=None):
         "split_summary": split_summary,
         "determinism": determinism,
         "runtime": {"device": str(device), "num_workers": args.num_workers, "data_root": str(data_root),
-                    "smoke_batches": args.smoke_batches},
+                    "smoke_batches": args.smoke_batches, "output_dir": str(run_dir)},
         "environment": collect_environment(REPO_ROOT),
         "architecture_verification": arch_report,
         "model": cfg["model"],
@@ -192,6 +195,7 @@ def main(argv=None):
     print(f"train {len(train_ds)} images ({len(train_loader)} batches/epoch), val {len(val_ds)} images")
 
     history, best = [], None
+    training_started = datetime.now(timezone.utc).isoformat()
     for epoch in range(1, epochs + 1):
         start = time.time()
         lr = optimizer.param_groups[0]["lr"]
@@ -233,6 +237,8 @@ def main(argv=None):
             write_json(run_dir / "val_metrics_best.json", {"epoch": epoch, **val, "classification": val_cls})
 
     # --- selection is final; only now are predictions exported, test included ---
+    # Audit trail: the test Dataset/DataLoader is first constructed after this timestamp.
+    selection_finalized = datetime.now(timezone.utc).isoformat()
     ckpt = torch.load(run_dir / "best.pt", map_location="cpu", weights_only=True)
     model.load_state_dict(ckpt["model_state_dict"])
     model.to(device)
@@ -243,6 +249,13 @@ def main(argv=None):
 
     metadata.update({
         "status": "complete",
+        "test_access_audit": {
+            "training_started_utc": training_started,
+            "selection_finalized_utc": selection_finalized,
+            "test_export_finished_utc": datetime.now(timezone.utc).isoformat(),
+            "datasets_built_during_training": ["train", "val"],
+            "test_used_for_training_selection_or_thresholds": False,
+        },
         "selected_epoch": best["epoch"],
         "selected_val_nll": best["val_nll"],
         "checkpoint_sha256": sha256_file(run_dir / "best.pt"),
