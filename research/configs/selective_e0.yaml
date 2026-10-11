@@ -1,0 +1,43 @@
+# =============================================================================
+# Uncertainty-based selective prediction + malignant referral on ONE trained E0 run.
+# Uses saved logits only; no training, no new calibration. All targets are fixed in
+# advance; every threshold is selected on VALIDATION and applied unchanged to test.
+# Operating points are empirical validation targets, NOT guarantees of test
+# performance or clinical safety. Single-seed results are preliminary.
+# =============================================================================
+
+experiment:
+  name: SEL_E0
+  output_dir: research/outputs/selective_prediction
+
+probabilities:
+  # uncalibrated = softmax(z); temperature_scaled = softmax(z / T), T read from the
+  # validation-fitted calibration run (temperature.json), never refitted here.
+  versions: [uncalibrated, temperature_scaled]
+
+scores:
+  # Uncertainty scores, higher = more uncertain. Accept a prediction iff u <= threshold.
+  decision: [msp, entropy]        # msp: 1 - max_k p_k ; entropy: -sum_k p_k ln p_k (nats)
+  exploratory: [margin]           # 1 - (p_top1 - p_top2); AURC only, never used for a decision
+
+primary:
+  # The ONLY primary comparison. Everything else is secondary or exploratory.
+  metric: aurc
+  split: test
+  comparison: entropy_temperature_scaled_minus_msp_temperature_scaled
+
+multiclass:
+  coverage_targets: [0.90, 0.80, 0.70]   # validation coverage >= target, as small as ties allow
+  risk_targets: [0.10, 0.05]             # largest validation coverage with retained-case error <= target
+  min_class_support_flag: 30             # classes with fewer test images are flagged as imprecise
+
+referral:
+  # Separate binary analysis. Refer iff p_mal >= t, p_mal = sum of malignant-class probabilities.
+  malignant_classes: [akiec, bcc, mel]   # project mapping (backend/app/class_info.py); akiec is pre-malignant
+  sensitivity_targets: [0.95, 0.90]      # largest t whose validation malignant sensitivity >= target
+
+bootstrap:
+  n_resamples: 2000
+  unit: lesion_id                        # paired: every metric of a replicate uses the same lesion resample
+  confidence_level: 0.95
+  seed: 0
