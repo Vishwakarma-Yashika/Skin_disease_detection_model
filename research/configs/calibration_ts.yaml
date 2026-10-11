@@ -1,0 +1,44 @@
+# =============================================================================
+# Temperature scaling (post-hoc calibration) of a trained E0 run.
+#
+# One global scalar T, fitted by minimising mean multiclass NLL of softmax(z / T) on
+# the VALIDATION logits only, then applied unchanged to the test logits. The model,
+# checkpoint and E0 outputs are never modified. All values are declared in advance.
+# =============================================================================
+
+experiment:
+  name: CAL_TS
+  output_dir: research/outputs/calibration
+
+fit:
+  split: val
+  # Optimised over beta = 1/T. NLL(beta) = mean_i[logsumexp(beta z_i) - beta z_iy];
+  # its second derivative is the mean variance of the logits under softmax(beta z),
+  # which is >= 0 -- convexity is still verified numerically on every fit.
+  beta_bounds: [0.05, 20.0]          # T in [0.05, 20]
+  brent_xatol: 1.0e-10
+  # Independent cross-check: dense log-spaced grid over a range WIDER than the bounds,
+  # so an optimum outside the bounds is detected instead of silently clipped.
+  grid_beta_range: [0.001, 1000.0]
+  grid_points: 4001
+  # Fit is rejected if any of these fail.
+  boundary_relative_margin: 1.0e-4   # optimum must not sit on a beta bound
+  grid_nll_tolerance: 1.0e-9         # grid minimum may not beat the Brent solution by more
+  gradient_tolerance: 1.0e-6         # |dNLL/dbeta| at the solution
+  hessian_min: 1.0e-12               # d2NLL/dbeta2 at the solution must be strictly positive
+
+evaluation:
+  ece_bins: 15                       # E0 convention: equal-width (i/15, (i+1)/15]
+  bootstrap:                         # paired test differences, T held fixed
+    n_resamples: 2000
+    unit: lesion_id
+    confidence_level: 0.95
+    seed: 0
+  temperature_bootstrap:             # uncertainty of T: refit on lesion-resampled validation
+    n_resamples: 1000
+    seed: 1
+
+verification:
+  # Re-run best.pt on this many validation images and compare with the saved logits.
+  logit_recheck_images: 32
+  logit_recheck_tolerance: 1.0e-4
