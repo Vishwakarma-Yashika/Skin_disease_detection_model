@@ -60,6 +60,8 @@ python -m research.evaluation.evaluate --config research/configs/e0.yaml
 `run_metadata.json`, not in the config hash): `--data-root`, `--device`,
 `--num-workers`, `--overwrite`. `--smoke-batches N` is a pipeline test only:
 1 epoch, N batches, written to `outputs/smoke/`, never an E0 result.
+`--max-epochs N` stops a run after N epochs of the unchanged 30-epoch schedule;
+state any such truncation when reporting results.
 
 Compute: on this project's development machine (CPU only, no CUDA) a smoke
 test suggests roughly 20+ minutes per epoch, i.e. on the order of 10 hours

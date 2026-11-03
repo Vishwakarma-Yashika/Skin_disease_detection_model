@@ -84,23 +84,23 @@ def verify_saved_probs(p: dict, path: Path):
 
 
 @torch.no_grad()
-def recheck_logits(ckpt, e0_cfg, data_root, val_pred, n, tol) -> dict:
-    """Recompute logits for the first n saved validation images from best.pt."""
+def recheck_logits(ckpt, e0_cfg, data_root, val_pred, n, tol, device="cpu") -> dict:
+    """Recompute logits for the first n saved validation images from best.pt, on the device that exported them."""
     classes = e0_cfg["data"]["classes"]
     model = FusionClassifier(num_classes=len(classes), feature_dim=e0_cfg["model"]["fusion_dim"], pretrained=False)
     model.load_state_dict(ckpt["model_state_dict"], strict=True)
     verify_architecture(model, e0_cfg)
-    model.eval()
+    model.to(device).eval()
     split_df, image_index, _, _ = load_validated_split(data_root, e0_cfg)
     ids = list(val_pred["image_id"][:n])
     frame = split_df.set_index("image_id").loc[ids].reset_index()
     _, eval_tf = build_transforms(e0_cfg)
     ds = HAM10000Dataset(frame, image_index, classes, eval_tf)
-    x = torch.stack([ds[i][0] for i in range(len(ds))])
-    fresh = model(x).float().numpy()
+    x = torch.stack([ds[i][0] for i in range(len(ds))]).to(device)
+    fresh = model(x).float().cpu().numpy()
     diff = float(np.abs(fresh - val_pred["logits"][:n]).max())
     _check(diff <= tol, f"saved validation logits do not match best.pt (max diff {diff})")
-    return {"n_images": n, "max_abs_logit_difference": diff, "tolerance": tol}
+    return {"n_images": n, "max_abs_logit_difference": diff, "tolerance": tol, "device": device}
 
 
 def evaluate_logits(z, y, classes, malignant, n_bins) -> dict:
@@ -216,6 +216,7 @@ def main(argv=None):
     ap.add_argument("--run-dir", required=True)
     ap.add_argument("--data-root", default=None)
     ap.add_argument("--overwrite", action="store_true")
+    ap.add_argument("--recheck-device", default="cpu", help="device for the saved-logit recheck; use the export device")
     args = ap.parse_args(argv)
     command = shlex.join(["python", "-m", "research.evaluation.calibration_eval",
                           *(argv if argv is not None else sys.argv[1:])])
@@ -244,7 +245,7 @@ def main(argv=None):
     # ---- 2. saved logits really come from best.pt ----
     v = cfg["verification"]
     recheck = recheck_logits(run["ckpt"], e0_cfg, resolve_data_root(args.data_root), val,
-                             v["logit_recheck_images"], v["logit_recheck_tolerance"])
+                             v["logit_recheck_images"], v["logit_recheck_tolerance"], args.recheck_device)
 
     # ---- 3. fit T on validation only ----
     try:

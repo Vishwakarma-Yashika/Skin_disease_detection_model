@@ -50,6 +50,9 @@ def parse_args(argv=None):
                    help="override experiment.output_dir (runtime setting; recorded, not part of the config hash)")
     p.add_argument("--smoke-batches", type=int, default=None,
                    help="PIPELINE TEST ONLY: 1 epoch, N batches per loop, written to outputs/smoke/. Not an E0 result.")
+    p.add_argument("--max-epochs", type=int, default=None,
+                   help="stop after this many epochs of the declared schedule (runtime setting; recorded, not part of "
+                        "the config hash). The learning-rate schedule still follows the config.")
     return p.parse_args(argv)
 
 
@@ -134,7 +137,9 @@ def main(argv=None):
     cfg_hash = config_hash(cfg)
     classes = cfg["data"]["classes"]
     t = cfg["training"]
-    epochs = 1 if smoke else t["epochs"]
+    if args.max_epochs is not None and not 1 <= args.max_epochs <= t["epochs"]:
+        raise SystemExit(f"--max-epochs must be between 1 and the declared {t['epochs']} epochs.")
+    epochs = args.max_epochs or (1 if smoke else t["epochs"])
 
     base_dir = repo_path(args.output_dir or cfg["experiment"]["output_dir"])
     run_dir = (base_dir.parent / "smoke" if smoke else base_dir) / f"seed_{seed}"
@@ -180,7 +185,7 @@ def main(argv=None):
         "split_summary": split_summary,
         "determinism": determinism,
         "runtime": {"device": str(device), "num_workers": args.num_workers, "data_root": str(data_root),
-                    "smoke_batches": args.smoke_batches, "output_dir": str(run_dir)},
+                    "smoke_batches": args.smoke_batches, "max_epochs": args.max_epochs, "output_dir": str(run_dir)},
         "environment": collect_environment(REPO_ROOT),
         "architecture_verification": arch_report,
         "model": cfg["model"],
@@ -263,6 +268,8 @@ def main(argv=None):
     })
     write_json(run_dir / "run_metadata.json", metadata)
     print(f"done. selected epoch {best['epoch']} (val_nll {best['val_nll']:.4f})")
+    if args.max_epochs is not None and best["epoch"] == epochs:
+        print("WARNING: the selected epoch is the last epoch run; validation NLL may still have been falling.")
     return 0
 
 
