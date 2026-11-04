@@ -199,3 +199,10 @@ content, and refuses to run again over existing results.
 python -m research.evaluation.ensemble_eval --config research/configs/ensemble_e0.yaml --metadata <HAM10000_metadata.csv>
 python -m research.evaluation.isic_eval --config research/configs/ensemble_e0.yaml   --images <folder> --ground-truth <csv> --ham-root <HAM10000 root>
 ```
+
+## Decision system served by the app
+
+`evaluation/decision_rule_eval.py` applies the rule in `configs/decision_rule.yaml`, which was committed
+before any ISIC result was seen, and writes `outputs/decision_system/manifest.json` and `feature_bank.npz`.
+The backend loads those files; set `ENSEMBLE_MANIFEST` to use another location. The out-of-scope check is weak:
+it passes most CIFAR-10 images and all white or black images, and it has not been tested on phone photos.

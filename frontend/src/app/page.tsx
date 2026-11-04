@@ -67,9 +67,10 @@ export default function Home() {
           Skin Lesion Classifier
         </h1>
         <p className="mt-2 text-sm text-ink-secondary-light dark:text-ink-secondary-dark">
-          Upload a close-up photo of a skin lesion. The EfficientNet + ResNet fusion model trained on
-          HAM10000 will predict the most likely of 7 diagnosis classes, show a confidence breakdown, and
-          highlight the regions it focused on.
+          Upload a dermoscopic image of a skin lesion. An ensemble of EfficientNet + ResNet fusion models
+          trained on HAM10000 estimates the most likely of 7 diagnosis classes, and refers possibly malignant
+          or uncertain cases to a dermatologist. It has not been validated on ordinary phone photos, and it can't
+          reliably reject images that aren't lesions.
         </p>
       </header>
 

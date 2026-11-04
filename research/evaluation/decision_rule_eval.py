@@ -2,7 +2,7 @@
 Freezes the app's decision system on HAM10000 validation, then tests the full rule.
 
     python -m research.evaluation.decision_rule_eval --config research/configs/decision_rule.yaml \
-        --ham-root <HAM10000 root> --isic-images <folder> --isic-ground-truth <csv> --cifar-dir <folder>
+        --ham-root <HAM10000 root> --isic-images <folder> --isic-ground-truth <csv> --cifar-dir <folder of CIFAR-10 test PNGs>
 
 Validation only: fusion features become the out-of-scope reference and its threshold is set;
 manifest.json and feature_bank.npz are written before any test image is scored. The rule then
@@ -19,7 +19,6 @@ import pandas as pd
 import torch
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
-from torchvision.datasets import CIFAR10
 
 from research.data.data import build_image_index, build_transforms
 from research.evaluation.calibration_eval import verify_run
@@ -141,9 +140,10 @@ def rejection_sets(cfg, cifar_dir):
     charts = sorted(p for p in repo_path("research/outputs").rglob("*.png")
                     if "figures" in p.parts and "decision_system" not in p.parts and not any(w in p.stem.lower() for w in ("error", "gallery", "montage", "example", "overlay", "gradcam")))
     step = max(1, len(charts) // t["project_charts_max"])
-    cifar = CIFAR10(cifar_dir, train=False, download=True)
+    cifar = sorted(Path(cifar_dir).glob("*.png"))[: t["cifar10_images"]]
+    _check(len(cifar) == t["cifar10_images"], f"expected {t['cifar10_images']} CIFAR-10 PNG files in {cifar_dir}")
     return {**synthetic, "project_charts": charts[::step][: t["project_charts_max"]],
-            "cifar10": [Image.fromarray(cifar.data[i]) for i in range(t["cifar10_images"])]}
+            "cifar10": cifar}
 
 
 def main(argv=None):

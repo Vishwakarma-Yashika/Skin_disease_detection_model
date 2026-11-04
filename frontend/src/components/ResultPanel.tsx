@@ -1,14 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import type { PredictionResponse, RiskLevel } from "@/lib/api";
+import type { Decision, PredictionResponse, RiskLevel } from "@/lib/api";
 import ProbabilityChart from "./ProbabilityChart";
 
-const RISK_BADGE: Record<RiskLevel, { bg: string; text: string; label: string }> = {
-  low: { bg: "bg-status-good/10", text: "text-status-good", label: "Low risk" },
-  high: { bg: "bg-status-serious/10", text: "text-status-serious", label: "High risk" },
-  critical: { bg: "bg-status-critical/10", text: "text-status-critical", label: "Critical risk" },
-  unknown: { bg: "bg-ink-muted/10", text: "text-ink-muted", label: "Unknown" },
+const DECISION_BADGE: Record<Decision, { bg: string; text: string; label: string }> = {
+  out_of_scope: { bg: "bg-ink-muted/10", text: "text-ink-muted", label: "Not assessed" },
+  refer_malignancy: { bg: "bg-status-critical/10", text: "text-status-critical", label: "Possible malignancy" },
+  refer_uncertain: { bg: "bg-status-serious/10", text: "text-status-serious", label: "Too uncertain" },
+  automated: { bg: "bg-ink-muted/10", text: "text-ink-muted", label: "Not flagged" },
 };
 
 interface Props {
@@ -18,7 +18,8 @@ interface Props {
 
 export default function ResultPanel({ result, originalPreviewUrl }: Props) {
   const [showOverlay, setShowOverlay] = useState(true);
-  const badge = RISK_BADGE[result.risk_level as RiskLevel] ?? RISK_BADGE.unknown;
+  const badge = DECISION_BADGE[result.decision];
+  const assessed = result.decision !== "out_of_scope";
   const riskByKey = Object.fromEntries(
     result.probabilities.map((p) => [p.key, inferRiskFromCategoryAndKey(p.key, p.category)])
   );
@@ -29,15 +30,12 @@ export default function ResultPanel({ result, originalPreviewUrl }: Props) {
       <div className="rounded-xl border border-line-hairline-light bg-surface-light p-6 dark:border-line-hairline-dark dark:bg-surface-dark">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-wide text-ink-muted">Top prediction</p>
+            <p className="text-xs uppercase tracking-wide text-ink-muted">Result</p>
             <h2 className="mt-1 text-2xl font-semibold text-ink-primary-light dark:text-ink-primary-dark">
-              {result.predicted_name}
+              {result.decision_title}
             </h2>
             <p className="mt-1 text-sm text-ink-secondary-light dark:text-ink-secondary-dark">
-              {(result.confidence * 100).toFixed(1)}% confidence
-              {result.model_val_accuracy != null && (
-                <> &middot; model validation accuracy {(result.model_val_accuracy * 100).toFixed(1)}%</>
-              )}
+              {result.model_name}
             </p>
           </div>
           <span className={`shrink-0 rounded-full px-3 py-1 text-sm font-medium ${badge.bg} ${badge.text}`}>
@@ -45,20 +43,26 @@ export default function ResultPanel({ result, originalPreviewUrl }: Props) {
           </span>
         </div>
 
-        <p className="mt-4 text-sm leading-relaxed text-ink-secondary-light dark:text-ink-secondary-dark">
-          {result.description}
+        <p className="mt-4 rounded-lg bg-brand/5 p-3 text-sm text-ink-primary-light dark:text-ink-primary-dark">
+          {result.decision_detail}
         </p>
-        <p className="mt-3 rounded-lg bg-brand/5 p-3 text-sm text-ink-primary-light dark:text-ink-primary-dark">
-          <span className="font-medium">What to do: </span>
-          {result.typical_action}
-        </p>
+        {assessed && result.confidence != null && result.malignancy_probability != null && (
+          <div className="mt-4 text-sm text-ink-secondary-light dark:text-ink-secondary-dark">
+            <p>
+              <span className="font-medium text-ink-primary-light dark:text-ink-primary-dark">Most likely class: </span>
+              {result.predicted_name}, {(result.confidence * 100).toFixed(1)}%
+              {" "}&middot; combined malignant probability {(result.malignancy_probability * 100).toFixed(1)}%
+            </p>
+            <p className="mt-2 leading-relaxed">{result.description}</p>
+          </div>
+        )}
       </div>
 
       {/* Image + Grad-CAM */}
       <div className="rounded-xl border border-line-hairline-light bg-surface-light p-6 dark:border-line-hairline-dark dark:bg-surface-dark">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-ink-primary-light dark:text-ink-primary-dark">
-            What the model looked at
+            {assessed ? "What the model looked at" : "Uploaded image"}
           </h3>
           {result.gradcam_overlay && (
             <button
@@ -77,20 +81,23 @@ export default function ResultPanel({ result, originalPreviewUrl }: Props) {
             className="max-h-80 rounded-md object-contain"
           />
         </div>
-        {!result.gradcam_overlay && (
+        {assessed && !result.gradcam_overlay && (
           <p className="mt-2 text-xs text-ink-muted">Grad-CAM overlay wasn&apos;t available for this prediction.</p>
         )}
         {result.gradcam_overlay && (
           <p className="mt-2 text-xs text-ink-muted">
-            Warmer colors show the image regions that most influenced the model&apos;s top prediction.
+            Warmer colors show the regions that most influenced the top class in one ensemble member&apos;s
+            EfficientNet branch. It doesn&apos;t explain the whole ensemble.
           </p>
         )}
       </div>
 
       {/* Probability breakdown */}
-      <div className="rounded-xl border border-line-hairline-light bg-surface-light p-6 dark:border-line-hairline-dark dark:bg-surface-dark">
-        <ProbabilityChart probabilities={result.probabilities} riskByKey={riskByKey} />
-      </div>
+      {assessed && (
+        <div className="rounded-xl border border-line-hairline-light bg-surface-light p-6 dark:border-line-hairline-dark dark:bg-surface-dark">
+          <ProbabilityChart probabilities={result.probabilities} riskByKey={riskByKey} />
+        </div>
+      )}
 
       {/* Disclaimer */}
       <div className="rounded-xl border border-status-warning/30 bg-status-warning/5 p-4 text-sm text-ink-secondary-light dark:text-ink-secondary-dark">

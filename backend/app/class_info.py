@@ -11,6 +11,33 @@ DISCLAIMER = (
     "please see a licensed dermatologist."
 )
 
+# decision -> what the interface tells the user. Set by the rule in ModelRegistry.predict.
+DECISION_TEXT = {
+    "out_of_scope": {
+        "title": "Image not assessed",
+        "detail": (
+            "This doesn't resemble the dermoscopic lesion images the model was trained on, so no "
+            "diagnosis is given. If this is a skin lesion, ask a dermatologist to examine it. This check "
+            "is limited and can miss unsuitable images."
+        ),
+    },
+    "refer_malignancy": {
+        "title": "Refer to a dermatologist",
+        "detail": "The model found a possible malignancy, so this case should not be cleared automatically.",
+    },
+    "refer_uncertain": {
+        "title": "Refer to a dermatologist",
+        "detail": "The model is too uncertain to give an automated result for this image.",
+    },
+    "automated": {
+        "title": "Not flagged for referral",
+        "detail": (
+            "The model didn't flag this image, but it can still be wrong, including about skin cancer. "
+            "This is not a clearance; see a dermatologist about any concern."
+        ),
+    },
+}
+
 # key -> metadata. Keys match the DIAGNOSIS_CLASSES / dx codes used during training.
 CLASS_INFO = {
     "akiec": {

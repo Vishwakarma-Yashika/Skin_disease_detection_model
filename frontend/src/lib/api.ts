@@ -10,17 +10,22 @@ export interface ClassProbability {
   category: Category;
 }
 
+export type Decision = "out_of_scope" | "refer_malignancy" | "refer_uncertain" | "automated";
+
 export interface PredictionResponse {
-  predicted_key: string;
-  predicted_name: string;
-  confidence: number;
-  category: Category;
-  risk_level: RiskLevel;
-  description: string;
-  typical_action: string;
+  decision: Decision;
+  decision_title: string;
+  decision_detail: string;
+  // Empty when the decision is "out_of_scope": no diagnosis is given.
+  predicted_key: string | null;
+  predicted_name: string | null;
+  confidence: number | null;
+  malignancy_probability: number | null;
+  category: Category | null;
+  description: string | null;
   probabilities: ClassProbability[];
   gradcam_overlay: string | null;
-  model_val_accuracy: number | null;
+  model_name: string;
   disclaimer: string;
 }
 
@@ -29,7 +34,7 @@ export interface HealthResponse {
   model_loaded: boolean;
   device: string;
   num_classes: number | null;
-  model_val_accuracy: number | null;
+  model_name: string | null;
   detail: string | null;
 }
 

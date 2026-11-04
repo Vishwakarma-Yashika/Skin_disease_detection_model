@@ -8,6 +8,14 @@ MODEL_PATH = os.environ.get(
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "best_fusion_model.pt"),
 )
 
+# The served system: the E0 ensemble, its temperatures, thresholds and out-of-scope reference.
+# Written by research.evaluation.decision_rule_eval. Paths inside it are relative to the repo.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ENSEMBLE_MANIFEST = os.environ.get(
+    "ENSEMBLE_MANIFEST",
+    os.path.join(REPO_ROOT, "research", "outputs", "decision_system", "manifest.json"),
+)
+
 # Must match training: torchvision.transforms Resize((224, 224)) + ImageNet norm
 IMG_SIZE = 224
 IMAGENET_MEAN = [0.485, 0.456, 0.406]

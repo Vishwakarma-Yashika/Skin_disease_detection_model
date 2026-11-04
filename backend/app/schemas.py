@@ -9,16 +9,19 @@ class ClassProbability(BaseModel):
 
 
 class PredictionResponse(BaseModel):
-    predicted_key: str
-    predicted_name: str
-    confidence: float
-    category: str  # "malignant" | "benign"
-    risk_level: str
-    description: str
-    typical_action: str
+    decision: str  # "out_of_scope" | "refer_malignancy" | "refer_uncertain" | "automated"
+    decision_title: str
+    decision_detail: str
+    # The fields below are empty when the decision is "out_of_scope": no diagnosis is given.
+    predicted_key: str | None
+    predicted_name: str | None
+    confidence: float | None
+    malignancy_probability: float | None
+    category: str | None  # "malignant" | "benign"
+    description: str | None
     probabilities: list[ClassProbability]
     gradcam_overlay: str | None
-    model_val_accuracy: float | None
+    model_name: str
     disclaimer: str
 
 
@@ -27,5 +30,5 @@ class HealthResponse(BaseModel):
     model_loaded: bool
     device: str
     num_classes: int | None
-    model_val_accuracy: float | None
+    model_name: str | None
     detail: str | None = None

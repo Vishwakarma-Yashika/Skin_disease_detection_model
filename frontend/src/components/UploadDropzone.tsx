@@ -65,9 +65,9 @@ export default function UploadDropzone({ onFileSelected, disabled, previewUrl }:
           <>
             <UploadIcon />
             <p className="text-sm font-medium text-ink-primary-light dark:text-ink-primary-dark">
-              Drag and drop a lesion photo, or click to browse
+              Drag and drop a dermoscopic image, or click to browse
             </p>
-            <p className="text-xs text-ink-muted">JPEG, PNG, or WebP &middot; close-up, well-lit, in focus</p>
+            <p className="text-xs text-ink-muted">JPEG, PNG, or WebP &middot; dermoscopic images only</p>
           </>
         )}
         <input
