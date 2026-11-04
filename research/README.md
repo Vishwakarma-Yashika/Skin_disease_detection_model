@@ -200,6 +200,13 @@ python -m research.evaluation.ensemble_eval --config research/configs/ensemble_e
 python -m research.evaluation.isic_eval --config research/configs/ensemble_e0.yaml   --images <folder> --ground-truth <csv> --ham-root <HAM10000 root>
 ```
 
+## Single-backbone comparison arms
+
+`configs/baseline_effnet.yaml` and `configs/baseline_resnet.yaml` match `e0.yaml` except for the backbone,
+and use seeds 123 and 2024 for 12 epochs on a Colab GPU (`colab/baseline_arms.ipynb`). `evaluation/baseline_eval.py`
+compares them with the same two fusion seeds, on HAM10000 test and once on ISIC 2018. The comparison is not
+one of E0's predeclared questions, and the HAM10000 test split had already been viewed.
+
 ## Decision system served by the app
 
 `evaluation/decision_rule_eval.py` applies the rule in `configs/decision_rule.yaml`, which was committed
