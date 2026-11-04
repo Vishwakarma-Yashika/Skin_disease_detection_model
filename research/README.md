@@ -183,3 +183,19 @@ checkpoint arithmetic suggests it used all of HAM10000. Results on any HAM10000 
 including the E0 split, are therefore a cross-protocol evaluation on largely
 seen images, not a held-out test of that model. Use `--manifest` with images that
 model cannot have seen (e.g. the ISIC 2018 Task 3 test set) for a genuinely held-out evaluation.
+
+## 3-seed ensemble and external test
+
+`evaluation/ensemble_eval.py` combines seeds 42, 123 and 2024 from saved logits, and reports deferral,
+malignant referral and results by `dx_type`. Config: `configs/ensemble_e0.yaml`. Thresholds come from
+validation, but the E0 test split had already been viewed, so these comparisons are exploratory.
+Seed 42 ran 30 epochs on CPU; seeds 123 and 2024 ran 12 epochs of the same schedule on a Colab GPU.
+
+`evaluation/isic_eval.py` tests those models once on the ISIC 2018 Task 3 test set, using the
+frozen temperatures and thresholds. It stops if an image is shared with HAM10000, by ID or by file
+content, and refuses to run again over existing results.
+
+```bash
+python -m research.evaluation.ensemble_eval --config research/configs/ensemble_e0.yaml --metadata <HAM10000_metadata.csv>
+python -m research.evaluation.isic_eval --config research/configs/ensemble_e0.yaml   --images <folder> --ground-truth <csv> --ham-root <HAM10000 root>
+```

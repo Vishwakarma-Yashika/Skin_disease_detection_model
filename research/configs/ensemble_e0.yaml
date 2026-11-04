@@ -1,0 +1,43 @@
+# =============================================================================
+# 3-seed E0 deep ensemble, deferral vs referral, and results by label confirmation.
+# Uses saved logits only; no training. Every threshold comes from VALIDATION and is
+# applied unchanged to test. The E0 test split had already been viewed before this
+# analysis was written, so these comparisons are exploratory, not confirmatory.
+# =============================================================================
+
+experiment:
+  name: ENSEMBLE_E0
+  output_dir: research/outputs/ensemble_e0
+
+seeds: [42, 123, 2024]
+
+ensemble:
+  # Mean of the members' temperature-scaled probabilities. No temperature is refitted.
+  combine: mean_of_temperature_scaled_probabilities
+
+scores:
+  # Higher = more uncertain or more concerning. A case is automated iff score <= threshold.
+  members: [msp, entropy, p_mal]
+  ensemble_only: [mutual_information]    # entropy of the mean - mean of the entropies
+
+workload:
+  # Share of validation cases sent to a specialist; thresholds fixed on validation.
+  referred_fractions: [0.30, 0.50]
+
+referral:
+  malignant_classes: [akiec, bcc, mel]   # project mapping; akiec is pre-malignant
+  sensitivity_targets: [0.95, 0.90]
+
+strata:
+  # HAM10000 dx_type values
+  biopsy_confirmed: [histo]
+  without_follow_up: [histo, consensus, confocal]
+  follow_up_only: [follow_up]
+
+bootstrap:
+  n_resamples: 2000
+  unit: lesion_id
+  confidence_level: 0.95
+  seed: 0
+
+ece_bins: 15
