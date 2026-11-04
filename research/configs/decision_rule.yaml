@@ -1,0 +1,34 @@
+# =============================================================================
+# The app's decision rule, fixed before any ISIC 2018 result was seen. Rules apply in
+# order; every threshold comes from HAM10000 validation.
+#   1. out of scope  -> no diagnosis
+#   2. p_mal >= t    -> refer (possible malignancy)
+#   3. msp > tau     -> refer (too uncertain)
+#   4. otherwise     -> automated research prediction
+# Operating points are empirical validation targets, not guarantees of safety.
+# =============================================================================
+
+experiment:
+  name: DECISION_RULE_E0
+  output_dir: research/outputs/decision_system
+
+ensemble_config: research/configs/ensemble_e0.yaml
+
+referral_target: sensitivity_0.95   # key in ensemble_e0 thresholds.json
+uncertainty:
+  score: msp
+  workload: refer_0.30              # key in ensemble_e0 thresholds.json
+
+out_of_scope:
+  # Mean cosine distance from an image's fusion features to its k nearest validation
+  # images, averaged over the ensemble members. A validation image never matches itself.
+  method: knn_cosine
+  k: 10
+  validation_retained: 0.99         # threshold keeps this share of validation images
+
+out_of_scope_test:
+  # In-scope images should pass: HAM10000 test and ISIC 2018 test.
+  # These should be rejected. None covers ordinary phone photos of skin.
+  synthetic_per_kind: 8             # white, black, flat skin colour, noise, gradient
+  project_charts_max: 60            # PNG figures from research/outputs
+  cifar10_images: 500               # natural objects, enlarged from 32 x 32
