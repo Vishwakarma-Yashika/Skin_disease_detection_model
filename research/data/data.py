@@ -18,7 +18,12 @@ from research.utils.seed import make_generator, seed_worker
 
 SPLITS = ("train", "val", "test")
 SPLIT_COLUMNS = ("image_id", "lesion_id", "dx", "split")
-KNOWN_TRAIN_AUGMENTATIONS = {"horizontal_flip_p", "vertical_flip_p"}
+KNOWN_TRAIN_AUGMENTATIONS = {
+    "horizontal_flip_p", "vertical_flip_p",
+    # E1 additions. Absent keys leave the E0 pipeline exactly as it was.
+    "random_resized_crop_min_scale", "rotation_degrees",
+    "color_jitter_brightness", "color_jitter_contrast", "color_jitter_saturation", "color_jitter_hue",
+}
 
 
 class LeakageError(RuntimeError):
@@ -227,11 +232,21 @@ def build_transforms(cfg: dict):
         # The config must describe everything applied; reject anything not implemented.
         raise ValueError(f"Unsupported augmentation keys in config: {sorted(unknown)}")
 
-    train_ops = [transforms.Resize(size)]
+    crop_min = aug.get("random_resized_crop_min_scale")
+    if crop_min:
+        # Mild crop-and-resize that keeps the lesion in view; replaces the plain resize in training only.
+        train_ops = [transforms.RandomResizedCrop(size, scale=(float(crop_min), 1.0), ratio=(0.9, 1.1))]
+    else:
+        train_ops = [transforms.Resize(size)]
     if aug.get("horizontal_flip_p", 0) > 0:
         train_ops.append(transforms.RandomHorizontalFlip(p=aug["horizontal_flip_p"]))
     if aug.get("vertical_flip_p", 0) > 0:
         train_ops.append(transforms.RandomVerticalFlip(p=aug["vertical_flip_p"]))
+    if aug.get("rotation_degrees", 0) > 0:
+        train_ops.append(transforms.RandomRotation(aug["rotation_degrees"]))
+    jitter = {k: aug.get(f"color_jitter_{k}", 0) for k in ("brightness", "contrast", "saturation", "hue")}
+    if any(v > 0 for v in jitter.values()):
+        train_ops.append(transforms.ColorJitter(**jitter))
     train_tf = transforms.Compose(train_ops + [transforms.ToTensor(), normalize])
     eval_tf = transforms.Compose([transforms.Resize(size), transforms.ToTensor(), normalize])
     return train_tf, eval_tf
@@ -256,11 +271,12 @@ class HAM10000Dataset(Dataset):
         return self.transform(img), self.labels[i], i
 
 
-def make_loader(dataset, batch_size: int, shuffle: bool, drop_last: bool, num_workers: int, seed: int):
+def make_loader(dataset, batch_size: int, shuffle: bool, drop_last: bool, num_workers: int, seed: int, sampler=None):
     return DataLoader(
         dataset,
         batch_size=batch_size,
-        shuffle=shuffle,
+        shuffle=shuffle if sampler is None else False,
+        sampler=sampler,
         drop_last=drop_last,
         num_workers=num_workers,
         worker_init_fn=seed_worker,

@@ -1,5 +1,9 @@
 """
-Train one seed of Experiment E0 (fixed EfficientNet-B0 + ResNet-34 fusion).
+Train one seed of Experiment E0 or E1 (EfficientNet-B0 + ResNet-34 fusion).
+
+E1 only adds options that are off in E0: class-weighted loss or a class-balanced sampler, stronger
+augmentation (data.py) and the class-balanced validation NLL as the selection metric. An E0 config
+behaves exactly as before.
 
     python -m research.training.train --config research/configs/e0.yaml --seed 42 --data-root <HAM10000 root>
 
@@ -25,6 +29,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+from torch.utils.data import WeightedRandomSampler
 
 from research.data.data import HAM10000Dataset, build_transforms, load_validated_split, make_loader
 from research.evaluation.calibration_metrics import nll
@@ -35,7 +40,7 @@ from research.utils.config import REPO_ROOT, load_config, repo_path, resolve_dat
 from research.utils.environment import collect_environment
 from research.utils.hashing import config_hash, sha256_file
 from research.utils.io import write_json
-from research.utils.seed import set_seed
+from research.utils.seed import make_generator, set_seed
 
 
 def parse_args(argv=None):
@@ -56,23 +61,55 @@ def parse_args(argv=None):
     return p.parse_args(argv)
 
 
+SELECTION_METRICS = ("val_nll", "val_balanced_nll")
+
+
 def check_config(cfg: dict) -> None:
-    """Reject settings E0 does not implement, so the config cannot silently over-promise."""
+    """Reject settings the trainer does not implement, so a config cannot silently over-promise."""
     t = cfg["training"]
+    weights = t["class_weights"]
+    if weights is not None:
+        if not isinstance(weights, dict) or set(weights) != {"scheme", "power"} or weights["scheme"] != "inverse_frequency":
+            raise ValueError("training.class_weights must be null or {scheme: inverse_frequency, power: <0..1>}")
+        if not 0 < float(weights["power"]) <= 1:
+            raise ValueError("training.class_weights.power must be in (0, 1]")
+    if t["sampler"] not in ("uniform_shuffle", "class_balanced"):
+        raise ValueError(f"training.sampler {t['sampler']!r} is not supported")
+    if t["sampler"] == "class_balanced" and weights is not None:
+        raise ValueError("Use either class_weights or the class_balanced sampler, not both (double counting).")
     expected = {
         ("training", "loss"): (t["loss"], "cross_entropy"),
-        ("training", "class_weights"): (t["class_weights"], None),
-        ("training", "sampler"): (t["sampler"], "uniform_shuffle"),
         ("training", "optimizer.name"): (t["optimizer"]["name"], "adamw"),
         ("training", "scheduler.name"): (t["scheduler"]["name"], "cosine"),
         ("training", "amp"): (t["amp"], False),
-        ("checkpoint", "selection_metric"): (cfg["checkpoint"]["selection_metric"], "val_nll"),
         ("checkpoint", "mode"): (cfg["checkpoint"]["mode"], "min"),
         ("checkpoint", "tie_break"): (cfg["checkpoint"]["tie_break"], "earliest_epoch"),
     }
     bad = {f"{a}.{b}": v for (a, b), v in expected.items() if v[0] != v[1]}
+    if cfg["checkpoint"]["selection_metric"] not in SELECTION_METRICS:
+        bad["checkpoint.selection_metric"] = (cfg["checkpoint"]["selection_metric"], SELECTION_METRICS)
     if bad:
-        raise ValueError(f"Config values not supported by E0 (actual, supported): {bad}")
+        raise ValueError(f"Config values not supported by the trainer (actual, supported): {bad}")
+
+
+def class_balancing(train_labels, n_classes: int, t: dict, seed: int):
+    """Returns (loss weight tensor or None, sampler or None, description) from the config and train labels only."""
+    counts = np.bincount(np.asarray(train_labels), minlength=n_classes).astype(np.float64)
+    n = counts.sum()
+    if t["class_weights"] is not None:
+        power = float(t["class_weights"]["power"])
+        w = (n / (n_classes * counts)) ** power
+        w = w / (w * counts).sum() * n            # mean weight over training samples is 1
+        return torch.tensor(w, dtype=torch.float32), None, {"class_weights": w.tolist(), "power": power}
+    if t["sampler"] == "class_balanced":
+        power = float(t.get("sampler_power", 1.0))
+        per_class = counts ** (-power)
+        sample_w = per_class[np.asarray(train_labels)]
+        sampler = WeightedRandomSampler(torch.tensor(sample_w, dtype=torch.double), num_samples=len(train_labels),
+                                        replacement=True, generator=make_generator(seed))
+        expected = counts * per_class
+        return None, sampler, {"sampler_power": power, "expected_class_share": (expected / expected.sum()).tolist()}
+    return None, None, {}
 
 
 def resolve_device(name: str) -> torch.device:
@@ -110,8 +147,11 @@ def evaluate_validation(model, loader, device, classes, max_batches):
     labels = np.asarray(loader.dataset.labels)[rows]
     probs = softmax64(logits)
     cls = classification_metrics(labels, probs, classes)
+    present = [c for c in range(len(classes)) if (labels == c).any()]
+    balanced_nll = float(np.mean([nll(logits[labels == c], labels[labels == c]) for c in present]))
     return {
         "val_nll": nll(logits, labels),
+        "val_balanced_nll": balanced_nll,
         "val_accuracy": cls["accuracy"],
         "val_balanced_accuracy": cls["balanced_accuracy"],
         "val_macro_f1": cls["macro_f1"],
@@ -132,7 +172,7 @@ def main(argv=None):
     smoke = args.smoke_batches is not None
     seed = args.seed
     if not smoke and seed not in cfg["experiment"]["seeds"]:
-        raise SystemExit(f"Seed {seed} is not one of the predeclared E0 seeds {cfg['experiment']['seeds']}.")
+        raise SystemExit(f"Seed {seed} is not one of the predeclared seeds {cfg['experiment']['seeds']}.")
 
     cfg_hash = config_hash(cfg)
     classes = cfg["data"]["classes"]
@@ -157,15 +197,17 @@ def main(argv=None):
     assert_eval_transform_matches_backend(eval_tf)
     train_ds = HAM10000Dataset(split_df[split_df["split"] == "train"], image_index, classes, train_tf)
     val_ds = HAM10000Dataset(split_df[split_df["split"] == "val"], image_index, classes, eval_tf)
+    class_weight, sampler, balancing = class_balancing(train_ds.labels, len(classes), t, seed)
     train_loader = make_loader(train_ds, t["batch_size"], shuffle=True, drop_last=t["drop_last"],
-                               num_workers=args.num_workers, seed=seed)
+                               num_workers=args.num_workers, seed=seed, sampler=sampler)
     val_loader = make_loader(val_ds, t["batch_size"], shuffle=False, drop_last=False,
                              num_workers=args.num_workers, seed=seed)
 
     # --- model / optimisation, exactly as declared ---
     model = build_model(cfg, pretrained=True).to(device)
     arch_report = verify_architecture(model, cfg)
-    criterion = nn.CrossEntropyLoss(label_smoothing=t["label_smoothing"])
+    criterion = nn.CrossEntropyLoss(weight=None if class_weight is None else class_weight.to(device),
+                                    label_smoothing=t["label_smoothing"])
     opt = t["optimizer"]
     optimizer = torch.optim.AdamW(model.parameters(), lr=opt["lr"], weight_decay=opt["weight_decay"],
                                   betas=tuple(opt["betas"]))
@@ -192,11 +234,12 @@ def main(argv=None):
         "preprocessing": {"train": repr(train_tf), "eval": repr(eval_tf)},
         "augmentation": cfg["augmentation"],
         "training": t,
+        "class_balancing": balancing,
         "checkpoint_rule": cfg["checkpoint"],
         "test_split_used_for_training_or_selection": False,
     }
     write_json(run_dir / "run_metadata.json", metadata)
-    print(f"E0 seed {seed} | device {device} | config {cfg_hash[:12]} | split {split_hash[:12]} | out {run_dir}")
+    print(f"{cfg['experiment']['name']} seed {seed} | device {device} | config {cfg_hash[:12]} | split {split_hash[:12]} | out {run_dir}")
     print(f"train {len(train_ds)} images ({len(train_loader)} batches/epoch), val {len(val_ds)} images")
 
     history, best = [], None
@@ -209,8 +252,9 @@ def main(argv=None):
         val, val_cls = evaluate_validation(model, val_loader, device, classes, args.smoke_batches)
         scheduler.step()
 
-        # Predeclared rule: minimum val NLL; strict '<' keeps the earliest epoch on ties.
-        improved = best is None or val["val_nll"] < best["val_nll"]
+        # Predeclared rule: minimum of the configured metric; strict '<' keeps the earliest epoch on ties.
+        metric = cfg["checkpoint"]["selection_metric"]
+        improved = best is None or val[metric] < best[metric]
         row = {"epoch": epoch, "lr": lr, "train_loss": train_loss, "train_accuracy": train_acc, **val,
                "epoch_seconds": time.time() - start, "selected_so_far": improved}
         history.append(row)
@@ -218,7 +262,7 @@ def main(argv=None):
         write_json(run_dir / "history.json", history)
         print(f"  train_loss {train_loss:.4f} acc {train_acc:.4f} | val_nll {val['val_nll']:.4f} "
               f"acc {val['val_accuracy']:.4f} bal_acc {val['val_balanced_accuracy']:.4f} "
-              f"{'*' if improved else ''} ({row['epoch_seconds']:.0f}s)", flush=True)
+              f"bal_nll {val['val_balanced_nll']:.4f} {'*' if improved else ''} ({row['epoch_seconds']:.0f}s)", flush=True)
 
         if improved:
             best = {"epoch": epoch, **val}
@@ -234,7 +278,7 @@ def main(argv=None):
                 "class_names": list(classes),
                 "seed": seed,
                 "selection": {"metric": cfg["checkpoint"]["selection_metric"], "mode": cfg["checkpoint"]["mode"],
-                              "tie_break": cfg["checkpoint"]["tie_break"], "value": val["val_nll"]},
+                              "tie_break": cfg["checkpoint"]["tie_break"], "value": val[metric]},
                 "config_hash": cfg_hash,
                 "split_sha256": split_hash,
                 "git_commit": metadata["environment"]["git_commit"],
@@ -263,11 +307,13 @@ def main(argv=None):
         },
         "selected_epoch": best["epoch"],
         "selected_val_nll": best["val_nll"],
+        "selected_val_balanced_nll": best["val_balanced_nll"],
+        "selected_metric": cfg["checkpoint"]["selection_metric"],
         "checkpoint_sha256": sha256_file(run_dir / "best.pt"),
         "total_epochs_run": epochs,
     })
     write_json(run_dir / "run_metadata.json", metadata)
-    print(f"done. selected epoch {best['epoch']} (val_nll {best['val_nll']:.4f})")
+    print(f"done. selected epoch {best['epoch']} ({cfg['checkpoint']['selection_metric']} {best[cfg['checkpoint']['selection_metric']]:.4f})")
     if args.max_epochs is not None and best["epoch"] == epochs:
         print("WARNING: the selected epoch is the last epoch run; validation NLL may still have been falling.")
     return 0
